@@ -865,11 +865,6 @@ def main():
                     st.error("Failed to analyze medical data. Please try another PDF or check API settings.")
             else:
                 st.error("No text could be extracted from the PDF. Ensure it's a valid medical document.")
-    
-    # Footer
-    st.divider()
-    st.markdown("**Note**: This tool is for informational purposes only and should not be used for medical diagnosis or treatment decisions.")
-    st.markdown("Developed with ❤️ by xAI | © 2025")
 
 if __name__ == "__main__":
     main()
