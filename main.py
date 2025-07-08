@@ -115,132 +115,83 @@ class MedicalPDFAnalyzer:
             return {}
         
         try:
-            # Truncate text if too long for model context
-            max_length = 3000  # Adjust based on OpenRouter's limits
-            if len(text) > max_length:
-                text = text[:max_length]
-                st.warning(f"Text truncated to {max_length} characters for analysis")
-            
-            prompt = f"""
-            Analyze the following medical document and extract ALL available information in JSON format. 
-            If any information is not found in the document, mark it as "N/A".
-            
-            Medical Document Text:
+            # Estimate token count (rough: 1 token ≈ 4 chars)
+            approx_tokens = len(text) // 4
+            max_context_tokens = 7000  # Leave room for prompt and response
+            max_chunk_chars = max_context_tokens * 4  # Approx chars per chunk
+
+            # Base prompt template
+            base_prompt = """
+            Analyze the following medical document chunk and extract ALL available information in JSON format. 
+            If any information is not found in the chunk, mark it as "N/A". Ensure the output is a valid JSON object.
+
+            Medical Document Chunk:
             {text}
-            
+
             Provide a comprehensive analysis in this JSON structure:
             {{
                 "document_metadata": {{
-                    "extraction_date": "{datetime.now().isoformat()}",
+                    "extraction_date": "{extraction_date}",
                     "document_type": "medical_report",
                     "file_source": "uploaded_pdf",
-                    "analysis_confidence": "high/medium/low"
+                    "analysis_confidence": "high/medium/low",
+                    "text_length": {text_length},
+                    "extraction_method": "AI_analysis"
                 }},
                 "administrative_info": {{
-                    "bill_number": "extracted or N/A",
-                    "mr_number": "medical record number or N/A",
-                    "room_ward_number": "room/ward number or N/A",
-                    "hospital_name": "extracted or N/A",
-                    "hospital_address": "extracted or N/A",
-                    "hospital_phone": "extracted or N/A",
-                    "department": "extracted or N/A",
-                    "admission_number": "extracted or N/A"
+                    "bill_number": "N/A",
+                    "mr_number": "N/A",
+                    "room_ward_number": "N/A",
+                    "hospital_name": "N/A",
+                    "hospital_address": "N/A",
+                    "hospital_phone": "N/A",
+                    "department": "N/A",
+                    "admission_number": "N/A"
                 }},
                 "patient_info": {{
-                    "name": "extracted or N/A",
-                    "age": "extracted or N/A",
-                    "gender": "extracted or N/A",
-                    "date_of_birth": "extracted or N/A",
-                    "address": "extracted or N/A",
-                    "phone_number": "extracted or N/A",
-                    "emergency_contact": "extracted or N/A",
-                    "insurance_info": "extracted or N/A",
-                    "patient_id": "extracted or N/A"
+                    "name": "N/A",
+                    "age": "N/A",
+                    "gender": "N/A",
+                    "date_of_birth": "N/A",
+                    "address": "N/A",
+                    "phone_number": "N/A",
+                    "emergency_contact": "N/A",
+                    "insurance_info": "N/A",
+                    "patient_id": "N/A"
                 }},
                 "visit_details": {{
-                    "date_of_visit": "extracted or N/A",
-                    "admission_date": "extracted or N/A",
-                    "discharge_date": "extracted or N/A",
-                    "visit_type": "outpatient/inpatient/emergency or N/A",
-                    "chief_complaint": "extracted or N/A",
-                    "referring_physician": "extracted or N/A"
+                    "date_of_visit": "N/A",
+                    "admission_date": "N/A",
+                    "discharge_date": "N/A",
+                    "visit_type": "N/A",
+                    "chief_complaint": "N/A",
+                    "referring_physician": "N/A"
                 }},
                 "medical_staff": {{
-                    "attending_physician": "extracted or N/A",
-                    "consultant_name": "extracted or N/A",
-                    "resident_doctor": "extracted or N/A",
-                    "nurse_in_charge": "extracted or N/A",
+                    "attending_physician": "N/A",
+                    "consultant_name": "N/A",
+                    "resident_doctor": "N/A",
+                    "nurse_in_charge": "N/A",
                     "other_staff": []
                 }},
                 "vital_signs": {{
-                    "blood_pressure_systolic": "number or N/A",
-                    "blood_pressure_diastolic": "number or N/A",
-                    "heart_rate": "number or N/A",
-                    "temperature": "number or N/A",
-                    "respiratory_rate": "number or N/A",
-                    "oxygen_saturation": "number or N/A",
-                    "weight": "number or N/A",
-                    "height": "number or N/A",
-                    "bmi": "calculated or N/A",
-                    "pain_scale": "1-10 or N/A"
+                    "blood_pressure_systolic": "N/A",
+                    "blood_pressure_diastolic": "N/A",
+                    "heart_rate": "N/A",
+                    "temperature": "N/A",
+                    "respiratory_rate": "N/A",
+                    "oxygen_saturation": "N/A",
+                    "weight": "N/A",
+                    "height": "N/A",
+                    "bmi": "N/A",
+                    "pain_scale": "N/A"
                 }},
-                "lab_results": [
-                    {{
-                        "test_name": "name",
-                        "value": "numeric value with unit",
-                        "normal_range": "range",
-                        "status": "normal/abnormal/critical",
-                        "date": "test date or N/A"
-                    }}
-                ],
-                "medications": [
-                    {{
-                        "name": "medication name",
-                        "dosage": "strength",
-                        "frequency": "how often",
-                        "route": "oral/IV/etc",
-                        "start_date": "date or N/A",
-                        "duration": "how long or N/A",
-                        "prescribing_doctor": "doctor name or N/A"
-                    }}
-                ],
-                "procedures": [
-                    {{
-                        "name": "procedure name",
-                        "date": "when performed",
-                        "doctor": "who performed",
-                        "outcome": "result",
-                        "complications": "any issues or none"
-                    }}
-                ],
-                "diagnoses": [
-                    {{
-                        "primary_diagnosis": "main diagnosis",
-                        "secondary_diagnoses": [],
-                        "icd_code": "code if available or N/A",
-                        "diagnosis_date": "date or N/A",
-                        "severity": "mild/moderate/severe or N/A"
-                    }}
-                ],
-                "imaging_studies": [
-                    {{
-                        "type": "X-ray/CT/MRI/etc",
-                        "body_part": "area examined",
-                        "date": "when done",
-                        "findings": "what was found",
-                        "radiologist": "who read it or N/A"
-                    }}
-                ],
-                "appointments_schedule": [
-                    {{
-                        "type": "follow-up/procedure/consultation",
-                        "date": "scheduled date",
-                        "time": "scheduled time",
-                        "doctor": "with whom",
-                        "purpose": "reason for appointment",
-                        "location": "where"
-                    }}
-                ],
+                "lab_results": [],
+                "medications": [],
+                "procedures": [],
+                "diagnoses": [],
+                "imaging_studies": [],
+                "appointments_schedule": [],
                 "doctor_recommendations": [],
                 "discharge_instructions": [],
                 "key_findings": [],
@@ -249,17 +200,17 @@ class MedicalPDFAnalyzer:
                 "medical_history": [],
                 "family_history": [],
                 "social_history": {{
-                    "smoking": "yes/no/former or N/A",
-                    "alcohol": "frequency or N/A",
-                    "occupation": "job or N/A",
-                    "exercise": "frequency or N/A"
+                    "smoking": "N/A",
+                    "alcohol": "N/A",
+                    "occupation": "N/A",
+                    "exercise": "N/A"
                 }},
-                "follow_up_required": "details or N/A",
+                "follow_up_required": "N/A",
                 "billing_info": {{
-                    "total_charges": "amount or N/A",
-                    "insurance_coverage": "amount or N/A",
-                    "patient_responsibility": "amount or N/A",
-                    "payment_status": "paid/pending/partial or N/A"
+                    "total_charges": "N/A",
+                    "insurance_coverage": "N/A",
+                    "patient_responsibility": "N/A",
+                    "payment_status": "N/A"
                 }},
                 "chart_data": {{
                     "trend_analysis": [],
@@ -268,774 +219,657 @@ class MedicalPDFAnalyzer:
                 }}
             }}
             
-            Extract ALL numerical values that could be used for charts and graphs.
+            Ensure the response is a valid JSON object enclosed in curly braces. Extract ALL numerical values for charts.
             """
             
-            with st.spinner("Analyzing with Llama 3 via OpenRouter (this may take a moment)..."):
-                headers = {
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": "meta-llama/llama-3.1-8b-instruct",
-                    "messages": [
-                        {"role": "user", "content": prompt}
-                    ],
-                    "max_tokens": 3000,
-                    "temperature": 0.1
-                }
+            # Initialize result dictionary
+            final_result = {}
+            
+            if approx_tokens <= max_context_tokens:
+                # Process entire text if within context limit
+                st.info(f"Analyzing document with {len(text)} characters (~{approx_tokens} tokens)...")
+                with st.spinner("Analyzing with Llama 3 via OpenRouter..."):
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "meta-llama/llama-3.1-8b-instruct",
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": base_prompt.format(
+                                    text=text,
+                                    extraction_date=datetime.now().isoformat(),
+                                    text_length=len(text)
+                                )
+                            }
+                        ],
+                        "max_tokens": 6000,  # Increased to handle larger responses
+                        "temperature": 0.1
+                    }
+                    
+                    try:
+                        response = requests.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers=headers,
+                            json=payload,
+                            timeout=30
+                        )
+                        response.raise_for_status()
+                        
+                        analysis_text = response.json()["choices"][0]["message"]["content"]
+                        # Log raw response for debugging
+                        with open(f"api_response_single_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "w", encoding="utf-8") as f:
+                            f.write(analysis_text)
+                        
+                        # Improved regex to handle JSON within markdown or plain text
+                        json_match = re.search(r'\{[\s\S]*\}', analysis_text)
+                        if not json_match:
+                            st.error(f"Failed to extract valid JSON from API response. Raw response saved to api_response_single.txt")
+                            st.text_area("Raw API Response", analysis_text[:2000], height=200)
+                            return {}
+                        
+                        try:
+                            final_result = json.loads(json_match.group())
+                        except json.JSONDecodeError as e:
+                            st.error(f"JSON parsing error: {str(e)}. Raw response saved to api_response_single.txt")
+                            st.text_area("Raw API Response", analysis_text[:2000], height=200)
+                            return {}
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"API request failed: {str(e)}")
+                        return {}
+            else:
+                # Chunk the text at paragraph breaks to preserve context
+                st.warning(f"Document is large ({len(text)} chars, ~{approx_tokens} tokens). Processing in chunks...")
+                chunks = []
+                current_chunk = ""
+                for paragraph in text.split("\n\n"):
+                    if len(current_chunk) + len(paragraph) + 2 <= max_chunk_chars:
+                        current_chunk += paragraph + "\n\n"
+                    else:
+                        if current_chunk:
+                            chunks.append(current_chunk)
+                        current_chunk = paragraph + "\n\n"
+                if current_chunk:
+                    chunks.append(current_chunk)
                 
-                response = requests.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
+                st.info(f"Processing {len(chunks)} chunks...")
+                progress_bar = st.progress(0)
+                chunk_results = []
                 
-                if response.status_code != 200:
-                    st.error(f"OpenRouter API error: {response.text}")
+                for i, chunk in enumerate(chunks):
+                    with st.spinner(f"Analyzing chunk {i+1}/{len(chunks)}..."):
+                        headers = {
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "model": "meta-llama/llama-3.1-8b-instruct",
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": base_prompt.format(
+                                        text=chunk,
+                                        extraction_date=datetime.now().isoformat(),
+                                        text_length=len(chunk)
+                                    )
+                                }
+                            ],
+                            "max_tokens": 6000,
+                            "temperature": 0.1
+                        }
+                        
+                        try:
+                            response = requests.post(
+                                "https://openrouter.ai/api/v1/chat/completions",
+                                headers=headers,
+                                json=payload,
+                                timeout=30
+                            )
+                            response.raise_for_status()
+                            
+                            analysis_text = response.json()["choices"][0]["message"]["content"]
+                            # Log raw response for debugging
+                            with open(f"api_response_chunk_{i+1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt", "w", encoding="utf-8") as f:
+                                f.write(analysis_text)
+                            
+                            # Improved regex to handle JSON within markdown or plain text
+                            json_match = re.search(r'\{[\s\S]*\}', analysis_text)
+                            if not json_match:
+                                st.warning(f"Failed to extract valid JSON from chunk {i+1}. Skipping chunk. Raw response saved to api_response_chunk_{i+1}.txt")
+                                st.text_area(f"Raw API Response for Chunk {i+1}", analysis_text[:2000], height=200)
+                                continue
+                            
+                            try:
+                                chunk_result = json.loads(json_match.group())
+                                chunk_results.append(chunk_result)
+                            except json.JSONDecodeError as e:
+                                st.warning(f"JSON parsing error in chunk {i+1}: {str(e)}. Skipping chunk. Raw response saved to api_response_chunk_{i+1}.txt")
+                                st.text_area(f"Raw API Response for Chunk {i+1}", analysis_text[:2000], height=200)
+                                continue
+                        except requests.exceptions.RequestException as e:
+                            st.warning(f"API request failed for chunk {i+1}: {str(e)}. Skipping chunk.")
+                            continue
+                        
+                    progress_bar.progress((i + 1) / len(chunks))
+                
+                progress_bar.empty()
+                
+                if not chunk_results:
+                    st.error("No valid chunks processed. Please try a smaller document or check API settings.")
                     return {}
                 
-                analysis_text = response.json()["choices"][0]["message"]["content"]
+                # Merge chunk results
+                final_result = self.merge_chunk_results(chunk_results)
             
-            # Extract JSON from response
-            json_match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            return {}
+            return final_result
                 
         except Exception as e:
-            st.error(f"Error analyzing medical data: {str(e)}")
+            st.error(f"Unexpected error analyzing medical data: {str(e)}")
             return {}
     
-    def create_comprehensive_charts(self, analysis_data: Dict[str, Any]) -> List[go.Figure]:
-        """Create comprehensive visualizations based on the analysis"""
-        charts = []
+    def merge_chunk_results(self, chunk_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Merge multiple JSON results from chunked text analysis"""
+        if not chunk_results:
+            return {}
         
-        try:
-            # 1. Vital Signs Dashboard
-            if analysis_data.get("vital_signs"):
-                vital_signs = analysis_data["vital_signs"]
-                vital_data = []
-                
-                for key, value in vital_signs.items():
-                    if value and value != "N/A" and str(value).replace('.', '').isdigit():
-                        vital_data.append({
-                            "Parameter": key.replace("_", " ").title(), 
-                            "Value": float(value),
-                            "Unit": self.get_vital_sign_unit(key)
-                        })
-                
-                if vital_data:
-                    df_vitals = pd.DataFrame(vital_data)
-                    fig_vitals = px.bar(df_vitals, x="Parameter", y="Value", 
-                                      title="📊 Vital Signs Overview",
-                                      color="Parameter",
-                                      text="Value")
-                    fig_vitals.update_traces(texttemplate='%{text}', textposition='outside')
-                    fig_vitals.update_layout(showlegend=False, height=400)
-                    charts.append(fig_vitals)
+        # Initialize merged result with the first chunk's structure
+        merged_result = chunk_results[0].copy()
+        
+        # Update document_metadata
+        merged_result["document_metadata"]["text_length"] = sum(
+            chunk["document_metadata"]["text_length"] for chunk in chunk_results
+        )
+        merged_result["document_metadata"]["extraction_date"] = datetime.now().isoformat()
+        
+        # Merge list-based fields
+        list_fields = [
+            "lab_results", "medications", "procedures", "diagnoses", "imaging_studies",
+            "appointments_schedule", "doctor_recommendations", "discharge_instructions",
+            "key_findings", "risk_factors", "allergies", "medical_history", "family_history"
+        ]
+        
+        for field in list_fields:
+            merged_result[field] = []
+            for chunk in chunk_results:
+                if chunk.get(field):
+                    merged_result[field].extend(chunk[field])
+        
+        # For dictionary fields, take the first non-empty value or keep N/A
+        dict_fields = [
+            "administrative_info", "patient_info", "visit_details", "medical_staff",
+            "vital_signs", "social_history", "billing_info", "chart_data"
+        ]
+        
+        for field in dict_fields:
+            for chunk in chunk_results:
+                if chunk.get(field) and any(v != "N/A" and v for v in chunk[field].values()):
+                    merged_result[field] = chunk[field]
+                    break
+        
+        # Update analysis_confidence based on the lowest confidence across chunks
+        confidences = {"high": 3, "medium": 2, "low": 1}
+        min_confidence = min(
+            confidences.get(chunk["document_metadata"]["analysis_confidence"], 1)
+            for chunk in chunk_results
+        )
+        merged_result["document_metadata"]["analysis_confidence"] = next(
+            k for k, v in confidences.items() if v == min_confidence
+        )
+        
+        return merged_result
+    
+    def display_metadata_section(self, title: str, data: Dict[str, Any], icon: str = "📋"):
+        """Display a metadata section with proper formatting"""
+        st.subheader(f"{icon} {title}")
+        
+        if not data:
+            st.warning("No data available for this section")
+            return
+        
+        # Create a formatted display
+        with st.container():
+            # Use columns for better layout
+            col1, col2 = st.columns([1, 2])
             
-            # 2. Lab Results Visualization
-            if analysis_data.get("lab_results"):
-                lab_results = analysis_data["lab_results"]
-                lab_data = []
-                
-                for result in lab_results:
-                    if isinstance(result, dict) and result.get("value"):
-                        numeric_value = self.extract_numeric_value(str(result["value"]))
-                        if numeric_value:
-                            lab_data.append({
-                                "Test": result.get("test_name", "Unknown"),
-                                "Value": numeric_value,
-                                "Status": result.get("status", "Unknown"),
-                                "Normal Range": result.get("normal_range", "N/A")
-                            })
-                
-                if lab_data:
-                    df_labs = pd.DataFrame(lab_data)
-                    fig_labs = px.bar(df_labs, x="Test", y="Value", color="Status",
-                                    title="🔬 Laboratory Results",
-                                    color_discrete_map={
-                                        "normal": "#28a745",
-                                        "abnormal": "#ffc107", 
-                                        "critical": "#dc3545"
-                                    })
-                    fig_labs.update_layout(height=400)
-                    charts.append(fig_labs)
+            with col1:
+                st.markdown("**Field**")
+            with col2:
+                st.markdown("**Value**")
             
-            # 3. Medications Pie Chart
-            if analysis_data.get("medications"):
-                medications = analysis_data["medications"]
-                if medications:
-                    med_data = []
-                    for med in medications[:10]:  # Limit to top 10
-                        if isinstance(med, dict):
-                            name = med.get("name", "Unknown")
-                            dosage = med.get("dosage", "")
-                            med_data.append(f"{name} ({dosage})")
+            st.divider()
+            
+            for key, value in data.items():
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    # Format field name
+                    field_name = key.replace('_', ' ').title()
+                    st.markdown(f"**{field_name}:**")
+                
+                with col2:
+                    # Format value based on type
+                    if isinstance(value, list):
+                        if value:
+                            for item in value:
+                                st.write(f"• {item}")
                         else:
-                            med_data.append(str(med))
-                    
-                    if med_data:
-                        fig_meds = go.Figure(data=[go.Pie(
-                            labels=med_data,
-                            values=[1] * len(med_data),
-                            title="💊 Current Medications Distribution"
-                        )])
-                        fig_meds.update_layout(height=400)
-                        charts.append(fig_meds)
-            
-            # 4. Blood Pressure Chart (if both systolic and diastolic available)
-            vital_signs = analysis_data.get("vital_signs", {})
-            if (vital_signs.get("blood_pressure_systolic", "N/A") != "N/A" and 
-                vital_signs.get("blood_pressure_diastolic", "N/A") != "N/A"):
-                
-                systolic = float(vital_signs["blood_pressure_systolic"])
-                diastolic = float(vital_signs["blood_pressure_diastolic"])
-                
-                fig_bp = go.Figure()
-                fig_bp.add_trace(go.Bar(
-                    x=['Systolic', 'Diastolic'],
-                    y=[systolic, diastolic],
-                    marker_color=['#ff6b6b', '#4ecdc4'],
-                    text=[f'{systolic} mmHg', f'{diastolic} mmHg'],
-                    textposition='auto'
-                ))
-                fig_bp.update_layout(
-                    title="🫀 Blood Pressure Reading",
-                    yaxis_title="mmHg",
-                    height=400
-                )
-                charts.append(fig_bp)
-            
-            # 5. Procedures Timeline (if dates available)
-            if analysis_data.get("procedures"):
-                procedures = analysis_data["procedures"]
-                timeline_data = []
-                
-                for proc in procedures:
-                    if isinstance(proc, dict) and proc.get("date", "N/A") != "N/A":
-                        timeline_data.append({
-                            "Procedure": proc.get("name", "Unknown"),
-                            "Date": proc.get("date"),
-                            "Doctor": proc.get("doctor", "N/A"),
-                            "Outcome": proc.get("outcome", "N/A")
-                        })
-                
-                if timeline_data:
-                    df_timeline = pd.DataFrame(timeline_data)
-                    fig_timeline = px.timeline(
-                        df_timeline, 
-                        x_start="Date", 
-                        x_end="Date",
-                        y="Procedure",
-                        title="📅 Procedures Timeline",
-                        color="Outcome"
-                    )
-                    fig_timeline.update_layout(height=400)
-                    charts.append(fig_timeline)
-            
-            # 6. Risk Factors Analysis
-            if analysis_data.get("risk_factors"):
-                risk_factors = analysis_data["risk_factors"]
-                if risk_factors:
-                    risk_counts = {}
-                    for risk in risk_factors:
-                        risk_type = str(risk).split()[0] if risk else "Other"
-                        risk_counts[risk_type] = risk_counts.get(risk_type, 0) + 1
-                    
-                    if risk_counts:
-                        fig_risks = go.Figure(data=[go.Pie(
-                            labels=list(risk_counts.keys()),
-                            values=list(risk_counts.values()),
-                            title="⚠️ Risk Factors Distribution"
-                        )])
-                        fig_risks.update_traces(marker_colors=['#ff9999', '#ffcc99', '#99ccff', '#cc99ff'])
-                        fig_risks.update_layout(height=400)
-                        charts.append(fig_risks)
-            
-        except Exception as e:
-            st.error(f"Error creating charts: {str(e)}")
+                            st.write("*No items*")
+                    elif isinstance(value, dict):
+                        st.json(value)
+                    else:
+                        # Handle N/A values
+                        if str(value) == "N/A":
+                            st.write("*Not Available*")
+                        else:
+                            st.write(str(value))
+    
+    def display_list_metadata_table(self, title: str, data: List[Dict[str, Any]], icon: str = "📋"):
+        """Display list-based metadata in a tabular format"""
+        st.subheader(f"{icon} {title}")
         
-        return charts
+        if not data:
+            st.warning(f"No {title.lower()} data available")
+            return
+        
+        # Display count
+        st.info(f"Total {title}: {len(data)}")
+        
+        # Convert data to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Replace 'N/A' with a more readable format for display
+        df = df.fillna("Not Available")
+        
+        # Format column names
+        df.columns = [col.replace('_', ' ').title() for col in df.columns]
+        
+        # Display the table
+        st.dataframe(df, use_container_width=True)
     
-    def get_vital_sign_unit(self, parameter: str) -> str:
-        """Get appropriate unit for vital sign parameter"""
-        units = {
-            "blood_pressure_systolic": "mmHg",
-            "blood_pressure_diastolic": "mmHg", 
-            "heart_rate": "bpm",
-            "temperature": "°F",
-            "respiratory_rate": "/min",
-            "oxygen_saturation": "%",
-            "weight": "lbs",
-            "height": "in",
-            "bmi": "kg/m²",
-            "pain_scale": "/10"
+    def display_simple_list_table(self, title: str, data: List[str], icon: str = "📋"):
+        """Display simple list data (e.g., recommendations, instructions) in a single-column table"""
+        st.subheader(f"{icon} {title}")
+        
+        if not data:
+            st.warning(f"No {title.lower()} data available")
+            return
+        
+        # Display count
+        st.info(f"Total {title}: {len(data)}")
+        
+        # Convert to DataFrame with a single column
+        df = pd.DataFrame(data, columns=[title[:-1]])  # Remove 's' for singular column name
+        
+        # Display the table
+        st.dataframe(df, use_container_width=True)
+    
+    def get_item_identifier(self, item: Dict[str, Any]) -> str:
+        """Get an identifier for display purposes"""
+        if isinstance(item, dict):
+            # Try common identifier fields
+            for field in ['name', 'test_name', 'type', 'primary_diagnosis', 'date']:
+                if field in item and item[field] and item[field] != "N/A":
+                    return str(item[field])
+            # Return first non-N/A value
+            for key, value in item.items():
+                if value and str(value) != "N/A":
+                    return str(value)
+        return "Details"
+    
+    def create_metadata_summary(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a comprehensive metadata summary"""
+        summary = {
+            "extraction_timestamp": datetime.now().isoformat(),
+            "document_analysis_stats": {
+                "total_sections": len(analysis_data),
+                "populated_sections": sum(1 for section in analysis_data.values() if section and section != "N/A"),
+                "data_completeness_percentage": 0
+            },
+            "content_statistics": {
+                "medications_count": len(analysis_data.get("medications", [])),
+                "lab_results_count": len(analysis_data.get("lab_results", [])),
+                "procedures_count": len(analysis_data.get("procedures", [])),
+                "diagnoses_count": len(analysis_data.get("diagnoses", [])),
+                "imaging_studies_count": len(analysis_data.get("imaging_studies", [])),
+                "appointments_count": len(analysis_data.get("appointments_schedule", [])),
+                "risk_factors_count": len(analysis_data.get("risk_factors", [])),
+                "allergies_count": len(analysis_data.get("allergies", [])),
+                "recommendations_count": len(analysis_data.get("doctor_recommendations", [])),
+                "discharge_instructions_count": len(analysis_data.get("discharge_instructions", [])),
+                "billing_info_completeness": self.calculate_completeness(analysis_data.get("billing_info", {}))
+            }
         }
-        return units.get(parameter, "")
+        
+        # Calculate overall completeness
+        total_completeness = sum([
+            summary["content_statistics"]["billing_info_completeness"],
+            self.calculate_completeness(analysis_data.get("vital_signs", {})),
+            self.calculate_completeness(analysis_data.get("patient_info", {})),
+            self.calculate_completeness(analysis_data.get("administrative_info", {})),
+            self.calculate_completeness(analysis_data.get("visit_details", {}))
+        ])
+        summary["document_analysis_stats"]["data_completeness_percentage"] = total_completeness / 5 if total_completeness > 0 else 0
+        
+        return summary
     
-    def extract_numeric_value(self, text: str) -> float:
-        """Extract numeric value from text"""
-        try:
-            match = re.search(r'(\d+\.?\d*)', text)
-            if match:
-                return float(match.group(1))
-        except:
-            pass
-        return None
+    def calculate_completeness(self, data: Dict[str, Any]) -> float:
+        """Calculate completeness percentage for a data section"""
+        if not data:
+            return 0.0
+        
+        total_fields = len(data)
+        populated_fields = sum(1 for value in data.values() if value and str(value) != "N/A")
+        
+        return (populated_fields / total_fields * 100) if total_fields > 0 else 0.0
     
-    def create_summary_statistics(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create summary statistics for the medical data"""
-        stats = {
-            "total_medications": len(analysis_data.get("medications", [])),
-            "total_procedures": len(analysis_data.get("procedures", [])),
-            "total_lab_tests": len(analysis_data.get("lab_results", [])),
-            "total_diagnoses": len(analysis_data.get("diagnoses", [])),
-            "total_appointments": len(analysis_data.get("appointments_schedule", [])),
-            "risk_factor_count": len(analysis_data.get("risk_factors", [])),
-        }
-        return stats
+    def display_complete_metadata(self, analysis_data: Dict[str, Any]):
+        """Display all extracted information in metadata format"""
+        st.header("🔍 Complete Medical Document Metadata")
+        
+        # Create metadata summary
+        metadata_summary = self.create_metadata_summary(analysis_data)
+        
+        # Display metadata summary first
+        st.subheader("📊 Metadata Summary")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Sections", metadata_summary["document_analysis_stats"]["total_sections"])
+        with col2:
+            st.metric("Populated Sections", metadata_summary["document_analysis_stats"]["populated_sections"])
+        with col3:
+            st.metric("Data Completeness", f"{metadata_summary['document_analysis_stats']['data_completeness_percentage']:.1f}%")
+        with col4:
+            st.metric("Content Items", sum([v for k, v in metadata_summary["content_statistics"].items() if k != "billing_info_completeness"]))
+        
+        # Display detailed metadata in organized sections
+        metadata_tabs = st.tabs([
+            "📋 Document Metadata",
+            "🏥 Administrative Data", 
+            "👤 Patient Information",
+            "🩺 Medical Data",
+            "💰 Billing",
+            "🔍 Raw Data Structure"
+        ])
+        
+        with metadata_tabs[0]:
+            st.header("📋 Document Metadata")
+            
+            # Document metadata
+            if analysis_data.get("document_metadata"):
+                self.display_metadata_section("Document Information", analysis_data["document_metadata"], "📄")
+            
+            # Visit details
+            if analysis_data.get("visit_details"):
+                self.display_metadata_section("Visit Details", analysis_data["visit_details"], "🏥")
+            
+            # Medical staff
+            if analysis_data.get("medical_staff"):
+                self.display_metadata_section("Medical Staff", analysis_data["medical_staff"], "👨‍⚕️")
+        
+        with metadata_tabs[1]:
+            st.header("🏥 Administrative Data")
+            
+            # Administrative info
+            if analysis_data.get("administrative_info"):
+                self.display_metadata_section("Administrative Information", analysis_data["administrative_info"], "📋")
+        
+        with metadata_tabs[2]:
+            st.header("👤 Patient Information")
+            
+            # Patient info
+            if analysis_data.get("patient_info"):
+                self.display_metadata_section("Patient Details", analysis_data["patient_info"], "👤")
+            
+            # Vital signs
+            if analysis_data.get("vital_signs"):
+                self.display_metadata_section("Vital Signs", analysis_data["vital_signs"], "💓")
+            
+            # Social history
+            if analysis_data.get("social_history"):
+                self.display_metadata_section("Social History", analysis_data["social_history"], "👥")
+            
+            # Medical history
+            if analysis_data.get("medical_history"):
+                st.subheader("📋 Medical History")
+                for item in analysis_data["medical_history"]:
+                    st.write(f"• {item}")
+            
+            # Family history
+            if analysis_data.get("family_history"):
+                st.subheader("👨‍👩‍👧‍👦 Family History")
+                for item in analysis_data["family_history"]:
+                    st.write(f"• {item}")
+            
+            # Allergies
+            if analysis_data.get("allergies"):
+                st.subheader("🚨 Allergies")
+                for allergy in analysis_data["allergies"]:
+                    st.warning(f"⚠️ {allergy}")
+        
+        with metadata_tabs[3]:
+            st.header("🩺 Medical Data")
+            
+            # Lab results
+            if analysis_data.get("lab_results"):
+                self.display_list_metadata_table("Lab Results", analysis_data["lab_results"], "🔬")
+            
+            # Medications
+            if analysis_data.get("medications"):
+                self.display_list_metadata_table("Medications", analysis_data["medications"], "💊")
+            
+            # Procedures
+            if analysis_data.get("procedures"):
+                self.display_list_metadata_table("Procedures", analysis_data["procedures"], "⚕️")
+            
+            # Diagnoses
+            if analysis_data.get("diagnoses"):
+                self.display_list_metadata_table("Diagnoses", analysis_data["diagnoses"], "🩺")
+            
+            # Imaging studies
+            if analysis_data.get("imaging_studies"):
+                self.display_list_metadata_table("Imaging Studies", analysis_data["imaging_studies"], "🔍")
+            
+            # Appointments
+            if analysis_data.get("appointments_schedule"):
+                self.display_list_metadata_table("Appointments", analysis_data["appointments_schedule"], "📅")
+            
+            # Recommendations
+            if analysis_data.get("doctor_recommendations"):
+                self.display_simple_list_table("Doctor Recommendations", analysis_data["doctor_recommendations"], "👨‍⚕️")
+            
+            # Discharge instructions
+            if analysis_data.get("discharge_instructions"):
+                self.display_simple_list_table("Discharge Instructions", analysis_data["discharge_instructions"], "🏠")
+            
+            # Key findings
+            if analysis_data.get("key_findings"):
+                self.display_simple_list_table("Key Findings", analysis_data["key_findings"], "🔍")
+            
+            # Risk factors
+            if analysis_data.get("risk_factors"):
+                self.display_simple_list_table("Risk Factors", analysis_data["risk_factors"], "⚠️")
+        
+        with metadata_tabs[4]:
+            st.header("💰 Billing")
+            
+            # Billing info
+            if analysis_data.get("billing_info"):
+                self.display_metadata_section("Billing Information", analysis_data["billing_info"], "💰")
+        
+        with metadata_tabs[5]:
+            st.header("🔍 Raw Data Structure")
+            
+            # Show complete raw data structure
+            st.subheader("📊 Complete Extracted Data")
+            st.json(analysis_data)
+            
+            # Data export section
+            st.subheader("📥 Export Options")
+            
+            # Prepare complete metadata for download
+            complete_metadata = {
+                "metadata_summary": metadata_summary,
+                "extracted_data": analysis_data,
+                "export_timestamp": datetime.now().isoformat(),
+                "export_format": "complete_metadata_json"
+            }
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.download_button(
+                    label="📥 Download Complete Metadata (JSON)",
+                    data=json.dumps(complete_metadata, indent=2, ensure_ascii=False),
+                    file_name=f"complete_metadata_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+            
+            with col2:
+                # Create structured metadata report
+                metadata_report = self.create_metadata_report(metadata_summary, analysis_data)
+                st.download_button(
+                    label="📄 Download Metadata Report (TXT)",
+                    data=metadata_report,
+                    file_name=f"metadata_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain"
+                )
+
+    def create_metadata_report(self, metadata_summary: Dict[str, Any], analysis_data: Dict[str, Any]) -> str:
+        """Create a comprehensive metadata report"""
+        report = f"""
+# COMPREHENSIVE MEDICAL DOCUMENT METADATA REPORT
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## METADATA SUMMARY
+Total Sections: {metadata_summary['document_analysis_stats']['total_sections']}
+Populated Sections: {metadata_summary['document_analysis_stats']['populated_sections']}
+Data Completeness: {metadata_summary['document_analysis_stats']['data_completeness_percentage']:.1f}%
+
+## CONTENT STATISTICS
+"""
+        
+        for key, value in metadata_summary["content_statistics"].items():
+            if key != "billing_info_completeness":
+                report += f"{key.replace('_', ' ').title()}: {value}\n"
+        
+        report += "\n## BILLING INFORMATION\n"
+        billing_info = analysis_data.get("billing_info", {})
+        if billing_info:
+            for key, value in billing_info.items():
+                report += f"{key.replace('_', ' ').title()}: {value}\n"
+        else:
+            report += "No billing information available\n"
+        
+        report += "\n## DETAILED SECTION BREAKDOWN\n"
+        
+        for section_name, section_data in analysis_data.items():
+            if section_name in ["document_metadata", "billing_info"]:
+                continue
+            if section_data and section_data != "N/A":
+                report += f"\n### {section_name.replace('_', ' ').upper()}\n"
+                
+                if isinstance(section_data, dict):
+                    for key, value in section_data.items():
+                        report += f"  {key.replace('_', ' ').title()}: {value}\n"
+                elif isinstance(section_data, list):
+                    report += f"  Items: {len(section_data)}\n"
+                    for i, item in enumerate(section_data[:3], 1):  # Show first 3 items
+                        report += f"    {i}. {item}\n"
+                    if len(section_data) > 3:
+                        report += f"    ... and {len(section_data) - 3} more items\n"
+                else:
+                    report += f"  Value: {section_data}\n"
+        
+        return report
 
 def main():
     st.set_page_config(
-        page_title="Enhanced Medical PDF Analyzer",
+        page_title="Medical PDF Metadata Analyzer",
         page_icon="🏥",
         layout="wide"
     )
     
-    st.title("🏥 Enhanced Medical PDF Analysis with Comprehensive Data Extraction")
-    st.markdown("Upload medical PDFs to extract comprehensive data and generate AI-powered insights with detailed visualizations")
+    st.title("🏥 Medical PDF Metadata Analyzer")
+    st.markdown("📤 Upload medical PDFs to extract and display comprehensive metadata with AI-powered analysis")
     
     # Initialize analyzer
     analyzer = MedicalPDFAnalyzer()
     
     # Sidebar for configuration
     with st.sidebar:
-        st.header("⚙️ System Status")
+        st.header("⚙️ System Configuration")
         
-        # Check Tesseract
+        # Check Tesseract configuration
         try:
             version = pytesseract.get_tesseract_version()
-            st.success(f"✅ Tesseract: {version}")
+            st.success(f"✅ Tesseract OCR: {version}")
         except:
-            st.error("❌ Tesseract not found")
+            st.error("❌ Tesseract not found. Install Tesseract: https://github.com/UB-Mannheim/tesseract/wiki")
         
-        # Check API
+        # Check API configuration
         if analyzer.model_loaded:
             st.success("✅ OpenRouter API configured")
         else:
-            st.error("❌ API not configured")
+            st.error("❌ OpenRouter API not configured")
+            
+        st.divider()
+        st.subheader("Upload Settings")
+        max_file_size = st.slider("Maximum file size (MB)", 1, 100, 50)
+        enable_ocr = st.checkbox("Enable OCR for scanned PDFs", value=True)
+        st.info("OCR is recommended for scanned documents but may increase processing time")
         
-        st.header("📊 Features")
-        st.info("""
-        **Enhanced Extraction:**
-        - Bill #, MR #, Room/Ward #
-        - Patient & Hospital Details
-        - Medical Staff Information
-        - Comprehensive Vital Signs
-        - Lab Results & Medications
-        - Procedures & Appointments
-        - Risk Factors & Recommendations
+        st.divider()
+        st.subheader("Analysis Settings")
+        confidence_threshold = st.selectbox("Analysis confidence threshold", ["High", "Medium", "Low"], index=1)
+        st.markdown("Select the confidence level for more reliable results")
         
-        **Advanced Visualizations:**
-        - Interactive Charts & Graphs
-        - Trend Analysis
-        - Risk Assessment
-        - Timeline Views
-        """)
-        
-        if st.button("🗑️ Clear Cache"):
-            st.cache_data.clear()
-            st.success("Cache cleared!")
+        st.divider()
+        st.subheader("About")
+        st.markdown("Medical PDF Metadata Analyzer v1.0\nPowered by xAI's Grok and OpenRouter")
+        st.markdown("[Source Code](https://github.com/your-org/medical-pdf-analyzer)")
     
-    # File upload
-    uploaded_file = st.file_uploader(
-        "📁 Upload Medical PDF", 
-        type=['pdf'],
-        help="Upload scanned or text-based medical PDFs for comprehensive analysis"
-    )
+    # File uploader
+    st.header("📤 Upload Medical PDF")
+    uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"], accept_multiple_files=False)
     
-    if uploaded_file is not None:
-        # Show file details
-        file_details = {
-            "📄 Filename": uploaded_file.name,
-            "📏 File size": f"{uploaded_file.size / 1024:.2f} KB",
-            "⏰ Upload time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        st.write("**File Details:**")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Filename", uploaded_file.name)
-        with col2:
-            st.metric("Size", f"{uploaded_file.size / 1024:.2f} KB")
-        with col3:
-            st.metric("Status", "✅ Ready")
-        
-        with st.spinner("🔄 Processing PDF..."):
+    if uploaded_file:
+        # Validate file size
+        file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
+        if file_size_mb > max_file_size:
+            st.error(f"File size ({file_size_mb:.2f}MB) exceeds maximum limit of {max_file_size}MB")
+        else:
+            st.success(f"Uploaded: {uploaded_file.name} ({file_size_mb:.2f}MB)")
+            
             # Extract text
-            text = analyzer.extract_text_from_pdf(uploaded_file)
+            with st.spinner("Extracting text from PDF..."):
+                text = analyzer.extract_text_from_pdf(uploaded_file)
             
             if text:
-                st.success("✅ Text extracted successfully!")
+                st.success("Text extraction completed!")
+                st.subheader("Extracted Text Preview")
+                with st.expander("View raw extracted text"):
+                    st.text_area("Extracted Text", text[:2000], height=300)  # Limit preview to 2000 chars
                 
-                with st.expander("👀 View Extracted Text"):
-                    st.text_area("Raw Extracted Text", text, height=200)
+                # Analyze medical data
+                with st.spinner(f"Analyzing medical data with {confidence_threshold.lower()} confidence..."):
+                    analysis_data = analyzer.analyze_medical_data(text)
                 
-                with st.spinner("🤖 Analyzing medical data with AI..."):
-                    # Analyze with comprehensive extraction
-                    analysis = analyzer.analyze_medical_data(text)
-                    
-                    if analysis:
-                        st.success("✅ Comprehensive analysis completed!")
-                        
-                        # Create summary statistics
-                        stats = analyzer.create_summary_statistics(analysis)
-                        
-                        # Display summary metrics
-                        st.header("📈 Summary Statistics")
-                        col1, col2, col3, col4, col5, col6 = st.columns(6)
-                        
-                        with col1:
-                            st.metric("💊 Medications", stats["total_medications"])
-                        with col2:
-                            st.metric("🔬 Lab Tests", stats["total_lab_tests"])
-                        with col3:
-                            st.metric("⚕️ Procedures", stats["total_procedures"])
-                        with col4:
-                            st.metric("🩺 Diagnoses", stats["total_diagnoses"])
-                        with col5:
-                            st.metric("📅 Appointments", stats["total_appointments"])
-                        with col6:
-                            st.metric("⚠️ Risk Factors", stats["risk_factor_count"])
-                        
-                        # Display results in tabs
-                        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-                            "📊 Charts & Analytics", 
-                            "🏥 Administrative Info",
-                            "👤 Patient Details", 
-                            "💊 Medical Data", 
-                            "📋 Recommendations",
-                            "📥 Download Data"
-                        ])
-                        
-                        with tab1:
-                            st.header("📊 Comprehensive Medical Data Visualizations")
-                            charts = analyzer.create_comprehensive_charts(analysis)
-                            
-                            if charts:
-                                # Display charts in a grid
-                                for i, chart in enumerate(charts):
-                                    st.plotly_chart(chart, use_container_width=True)
-                                    if i < len(charts) - 1:
-                                        st.divider()
-                            else:
-                                st.info("📈 No chartable data found in the document")
-                        
-                        with tab2:
-                            st.header("🏥 Administrative Information")
-                            
-                            if analysis.get("administrative_info"):
-                                admin_info = analysis["administrative_info"]
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.subheader("🏥 Hospital Details")
-                                    st.write(f"**Hospital:** {admin_info.get('hospital_name', 'N/A')}")
-                                    st.write(f"**Address:** {admin_info.get('hospital_address', 'N/A')}")
-                                    st.write(f"**Phone:** {admin_info.get('hospital_phone', 'N/A')}")
-                                    st.write(f"**Department:** {admin_info.get('department', 'N/A')}")
-                                
-                                with col2:
-                                    st.subheader("📄 Document Details")
-                                    st.write(f"**Bill #:** {admin_info.get('bill_number', 'N/A')}")
-                                    st.write(f"**MR #:** {admin_info.get('mr_number', 'N/A')}")
-                                    st.write(f"**Room/Ward #:** {admin_info.get('room_ward_number', 'N/A')}")
-                                    st.write(f"**Admission #:** {admin_info.get('admission_number', 'N/A')}")
-                            
-                            if analysis.get("medical_staff"):
-                                st.subheader("👨‍⚕️ Medical Staff")
-                                staff = analysis["medical_staff"]
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**Attending Physician:** {staff.get('attending_physician', 'N/A')}")
-                                    st.write(f"**Consultant:** {staff.get('consultant_name', 'N/A')}")
-                                with col2:
-                                    st.write(f"**Resident Doctor:** {staff.get('resident_doctor', 'N/A')}")
-                                    st.write(f"**Nurse in Charge:** {staff.get('nurse_in_charge', 'N/A')}")
-                        
-                        with tab3:
-                            st.header("👤 Patient Information")
-                            
-                            if analysis.get("patient_info"):
-                                patient_info = analysis["patient_info"]
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.subheader("👤 Personal Details")
-                                    st.write(f"**Name:** {patient_info.get('name', 'N/A')}")
-                                    st.write(f"**Age:** {patient_info.get('age', 'N/A')}")
-                                    st.write(f"**Gender:** {patient_info.get('gender', 'N/A')}")
-                                    st.write(f"**DOB:** {patient_info.get('date_of_birth', 'N/A')}")
-                                    st.write(f"**Patient ID:** {patient_info.get('patient_id', 'N/A')}")
-                                
-                                with col2:
-                                    st.subheader("📞 Contact Information")
-                                    st.write(f"**Address:** {patient_info.get('address', 'N/A')}")
-                                    st.write(f"**Phone:** {patient_info.get('phone_number', 'N/A')}")
-                                    st.write(f"**Emergency Contact:** {patient_info.get('emergency_contact', 'N/A')}")
-                                    st.write(f"**Insurance:** {patient_info.get('insurance_info', 'N/A')}")
-                            
-                            if analysis.get("visit_details"):
-                                st.subheader("🏥 Visit Details")
-                                visit = analysis["visit_details"]
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**Visit Date:** {visit.get('date_of_visit', 'N/A')}")
-                                    st.write(f"**Visit Type:** {visit.get('visit_type', 'N/A')}")
-                                    st.write(f"**Chief Complaint:** {visit.get('chief_complaint', 'N/A')}")
-                                with col2:
-                                    st.write(f"**Admission Date:** {visit.get('admission_date', 'N/A')}")
-                                    st.write(f"**Discharge Date:** {visit.get('discharge_date', 'N/A')}")
-                                    st.write(f"**Referring Physician:** {visit.get('referring_physician', 'N/A')}")
-                            
-                            # Vital Signs
-                            if analysis.get("vital_signs"):
-                                st.subheader("💓 Vital Signs")
-                                vital_signs = analysis["vital_signs"]
-                                
-                                col1, col2, col3 = st.columns(3)
-                                with col1:
-                                    st.metric("🩸 Blood Pressure", 
-                                             f"{vital_signs.get('blood_pressure_systolic', 'N/A')}/{vital_signs.get('blood_pressure_diastolic', 'N/A')}")
-                                    st.metric("🫀 Heart Rate", f"{vital_signs.get('heart_rate', 'N/A')} bpm")
-                                    st.metric("🌡️ Temperature", f"{vital_signs.get('temperature', 'N/A')}°F")
-                                
-                                with col2:
-                                    st.metric("🫁 Respiratory Rate", f"{vital_signs.get('respiratory_rate', 'N/A')}/min")
-                                    st.metric("🩸 O2 Saturation", f"{vital_signs.get('oxygen_saturation', 'N/A')}%")
-                                    st.metric("⚖️ Weight", f"{vital_signs.get('weight', 'N/A')} lbs")
-                                
-                                with col3:
-                                    st.metric("📏 Height", f"{vital_signs.get('height', 'N/A')} in")
-                                    st.metric("📊 BMI", vital_signs.get('bmi', 'N/A'))
-                                    st.metric("😣 Pain Scale", f"{vital_signs.get('pain_scale', 'N/A')}/10")
-                        
-                        with tab4:
-                            st.header("💊 Medical Data")
-                            
-                            # Lab Results
-                            if analysis.get("lab_results"):
-                                st.subheader("🔬 Laboratory Results")
-                                lab_results = analysis["lab_results"]
-                                
-                                if lab_results:
-                                    # Create DataFrame for better display
-                                    lab_data = []
-                                    for result in lab_results:
-                                        if isinstance(result, dict):
-                                            lab_data.append({
-                                                "Test Name": result.get("test_name", "Unknown"),
-                                                "Value": result.get("value", "N/A"),
-                                                "Normal Range": result.get("normal_range", "N/A"),
-                                                "Status": result.get("status", "Unknown"),
-                                                "Date": result.get("date", "N/A")
-                                            })
-                                    
-                                    if lab_data:
-                                        df_labs = pd.DataFrame(lab_data)
-                                        st.dataframe(df_labs, use_container_width=True)
-                                else:
-                                    st.info("No laboratory results found")
-                            
-                            # Medications
-                            if analysis.get("medications"):
-                                st.subheader("💊 Current Medications")
-                                medications = analysis["medications"]
-                                
-                                if medications:
-                                    med_data = []
-                                    for med in medications:
-                                        if isinstance(med, dict):
-                                            med_data.append({
-                                                "Medication": med.get("name", "Unknown"),
-                                                "Dosage": med.get("dosage", "N/A"),
-                                                "Frequency": med.get("frequency", "N/A"),
-                                                "Route": med.get("route", "N/A"),
-                                                "Start Date": med.get("start_date", "N/A"),
-                                                "Duration": med.get("duration", "N/A"),
-                                                "Prescribing Doctor": med.get("prescribing_doctor", "N/A")
-                                            })
-                                    
-                                    if med_data:
-                                        df_meds = pd.DataFrame(med_data)
-                                        st.dataframe(df_meds, use_container_width=True)
-                                else:
-                                    st.info("No medications found")
-                            
-                            # Procedures
-                            if analysis.get("procedures"):
-                                st.subheader("⚕️ Procedures")
-                                procedures = analysis["procedures"]
-                                
-                                if procedures:
-                                    for i, proc in enumerate(procedures, 1):
-                                        if isinstance(proc, dict):
-                                            with st.expander(f"Procedure {i}: {proc.get('name', 'Unknown')}"):
-                                                col1, col2 = st.columns(2)
-                                                with col1:
-                                                    st.write(f"**Date:** {proc.get('date', 'N/A')}")
-                                                    st.write(f"**Doctor:** {proc.get('doctor', 'N/A')}")
-                                                with col2:
-                                                    st.write(f"**Outcome:** {proc.get('outcome', 'N/A')}")
-                                                    st.write(f"**Complications:** {proc.get('complications', 'None')}")
-                            
-                            # Diagnoses
-                            if analysis.get("diagnoses"):
-                                st.subheader("🩺 Diagnoses")
-                                diagnoses = analysis["diagnoses"]
-                                
-                                for i, diagnosis in enumerate(diagnoses, 1):
-                                    if isinstance(diagnosis, dict):
-                                        st.write(f"**{i}. Primary Diagnosis:** {diagnosis.get('primary_diagnosis', 'N/A')}")
-                                        if diagnosis.get('secondary_diagnoses'):
-                                            st.write(f"   **Secondary:** {', '.join(diagnosis['secondary_diagnoses'])}")
-                                        st.write(f"   **ICD Code:** {diagnosis.get('icd_code', 'N/A')}")
-                                        st.write(f"   **Severity:** {diagnosis.get('severity', 'N/A')}")
-                                        st.write(f"   **Date:** {diagnosis.get('diagnosis_date', 'N/A')}")
-                                    else:
-                                        st.write(f"**{i}.** {diagnosis}")
-                            
-                            # Imaging Studies
-                            if analysis.get("imaging_studies"):
-                                st.subheader("🔍 Imaging Studies")
-                                imaging = analysis["imaging_studies"]
-                                
-                                for study in imaging:
-                                    if isinstance(study, dict):
-                                        with st.expander(f"{study.get('type', 'Unknown')} - {study.get('body_part', 'N/A')}"):
-                                            col1, col2 = st.columns(2)
-                                            with col1:
-                                                st.write(f"**Date:** {study.get('date', 'N/A')}")
-                                                st.write(f"**Radiologist:** {study.get('radiologist', 'N/A')}")
-                                            with col2:
-                                                st.write(f"**Findings:** {study.get('findings', 'N/A')}")
-                            
-                            # Allergies
-                            if analysis.get("allergies"):
-                                st.subheader("🚨 Allergies")
-                                allergies = analysis["allergies"]
-                                for allergy in allergies:
-                                    st.warning(f"⚠️ {allergy}")
-                            
-                            # Medical History
-                            if analysis.get("medical_history"):
-                                st.subheader("📋 Medical History")
-                                history = analysis["medical_history"]
-                                for item in history:
-                                    st.write(f"• {item}")
-                        
-                        with tab5:
-                            st.header("📋 Recommendations & Schedule")
-                            
-                            # Doctor Recommendations
-                            if analysis.get("doctor_recommendations"):
-                                st.subheader("👨‍⚕️ Doctor's Recommendations")
-                                for rec in analysis["doctor_recommendations"]:
-                                    st.info(f"💡 {rec}")
-                            
-                            # Discharge Instructions
-                            if analysis.get("discharge_instructions"):
-                                st.subheader("🏠 Discharge Instructions")
-                                for instruction in analysis["discharge_instructions"]:
-                                    st.write(f"📝 {instruction}")
-                            
-                            # Appointments Schedule
-                            if analysis.get("appointments_schedule"):
-                                st.subheader("📅 Upcoming Appointments")
-                                appointments = analysis["appointments_schedule"]
-                                
-                                for appointment in appointments:
-                                    if isinstance(appointment, dict):
-                                        with st.container():
-                                            col1, col2, col3 = st.columns(3)
-                                            with col1:
-                                                st.write(f"**Type:** {appointment.get('type', 'N/A')}")
-                                                st.write(f"**Date:** {appointment.get('date', 'N/A')}")
-                                            with col2:
-                                                st.write(f"**Time:** {appointment.get('time', 'N/A')}")
-                                                st.write(f"**Doctor:** {appointment.get('doctor', 'N/A')}")
-                                            with col3:
-                                                st.write(f"**Purpose:** {appointment.get('purpose', 'N/A')}")
-                                                st.write(f"**Location:** {appointment.get('location', 'N/A')}")
-                                            st.divider()
-                            
-                            # Key Findings
-                            if analysis.get("key_findings"):
-                                st.subheader("🔍 Key Medical Findings")
-                                for finding in analysis["key_findings"]:
-                                    st.success(f"✅ {finding}")
-                            
-                            # Risk Factors
-                            if analysis.get("risk_factors"):
-                                st.subheader("⚠️ Identified Risk Factors")
-                                for risk in analysis["risk_factors"]:
-                                    st.warning(f"⚠️ {risk}")
-                            
-                            # Follow-up Required
-                            if analysis.get("follow_up_required", "N/A") != "N/A":
-                                st.subheader("📅 Follow-up Required")
-                                st.info(analysis["follow_up_required"])
-                            
-                            # Social History
-                            if analysis.get("social_history"):
-                                st.subheader("👥 Social History")
-                                social = analysis["social_history"]
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.write(f"**Smoking:** {social.get('smoking', 'N/A')}")
-                                    st.write(f"**Alcohol:** {social.get('alcohol', 'N/A')}")
-                                with col2:
-                                    st.write(f"**Occupation:** {social.get('occupation', 'N/A')}")
-                                    st.write(f"**Exercise:** {social.get('exercise', 'N/A')}")
-                            
-                            # Billing Information
-                            if analysis.get("billing_info"):
-                                st.subheader("💰 Billing Information")
-                                billing = analysis["billing_info"]
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.metric("Total Charges", billing.get("total_charges", "N/A"))
-                                    st.metric("Insurance Coverage", billing.get("insurance_coverage", "N/A"))
-                                with col2:
-                                    st.metric("Patient Responsibility", billing.get("patient_responsibility", "N/A"))
-                                    st.metric("Payment Status", billing.get("payment_status", "N/A"))
-                        
-                        with tab6:
-                            st.header("📥 Download Comprehensive Medical Data")
-                            
-                            # Add metadata for download
-                            download_data = {
-                                "extraction_metadata": {
-                                    "file_name": uploaded_file.name,
-                                    "extraction_timestamp": datetime.now().isoformat(),
-                                    "analyzer_version": "2.0",
-                                    "total_data_points": sum([
-                                        len(analysis.get("medications", [])),
-                                        len(analysis.get("lab_results", [])),
-                                        len(analysis.get("procedures", [])),
-                                        len(analysis.get("diagnoses", [])),
-                                        len(analysis.get("appointments_schedule", [])),
-                                        len(analysis.get("risk_factors", []))
-                                    ])
-                                },
-                                "medical_data": analysis,
-                                "summary_statistics": stats
-                            }
-                            
-                            # Format JSON for download
-                            json_data = json.dumps(download_data, indent=2, ensure_ascii=False)
-                            
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.download_button(
-                                    label="📥 Download Complete Analysis (JSON)",
-                                    data=json_data,
-                                    file_name=f"medical_analysis_{uploaded_file.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                                    mime="application/json",
-                                    help="Download the complete medical analysis with all extracted data"
-                                )
-                            
-                            with col2:
-                                # Create a summary report
-                                summary_report = f"""
-# Medical Analysis Summary Report
-**File:** {uploaded_file.name}
-**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-## Summary Statistics
-- Medications: {stats['total_medications']}
-- Lab Tests: {stats['total_lab_tests']}
-- Procedures: {stats['total_procedures']}
-- Diagnoses: {stats['total_diagnoses']}
-- Appointments: {stats['total_appointments']}
-- Risk Factors: {stats['risk_factor_count']}
-
-## Patient Information
-- Name: {analysis.get('patient_info', {}).get('name', 'N/A')}
-- Age: {analysis.get('patient_info', {}).get('age', 'N/A')}
-- Gender: {analysis.get('patient_info', {}).get('gender', 'N/A')}
-
-## Key Findings
-{chr(10).join(['- ' + str(finding) for finding in analysis.get('key_findings', ['No key findings recorded'])])}
-
-## Recommendations
-{chr(10).join(['- ' + str(rec) for rec in analysis.get('doctor_recommendations', ['No recommendations recorded'])])}
-"""
-                                
-                                st.download_button(
-                                    label="📄 Download Summary Report (TXT)",
-                                    data=summary_report,
-                                    file_name=f"medical_summary_{uploaded_file.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                                    mime="text/plain",
-                                    help="Download a human-readable summary report"
-                                )
-                            
-                            # Display preview of JSON structure
-                            st.subheader("📋 Data Structure Preview")
-                            st.json({
-                                "extraction_metadata": download_data["extraction_metadata"],
-                                "medical_data_keys": list(analysis.keys()),
-                                "summary_statistics": stats
-                            })
-                            
-                            # Data completeness indicator
-                            st.subheader("📊 Data Completeness")
-                            
-                            completeness_data = []
-                            sections = [
-                                ("Administrative Info", analysis.get("administrative_info", {})),
-                                ("Patient Info", analysis.get("patient_info", {})),
-                                ("Vital Signs", analysis.get("vital_signs", {})),
-                                ("Lab Results", analysis.get("lab_results", [])),
-                                ("Medications", analysis.get("medications", [])),
-                                ("Procedures", analysis.get("procedures", [])),
-                                ("Diagnoses", analysis.get("diagnoses", []))
-                            ]
-                            
-                            for section_name, section_data in sections:
-                                if isinstance(section_data, dict):
-                                    filled_fields = sum(1 for v in section_data.values() if v and v != "N/A")
-                                    total_fields = len(section_data)
-                                    completeness = (filled_fields / total_fields * 100) if total_fields > 0 else 0
-                                else:
-                                    completeness = 100 if section_data else 0
-                                
-                                completeness_data.append({
-                                    "Section": section_name,
-                                    "Completeness": completeness
-                                })
-                            
-                            if completeness_data:
-                                df_completeness = pd.DataFrame(completeness_data)
-                                fig_completeness = px.bar(
-                                    df_completeness, 
-                                    x="Section", 
-                                    y="Completeness",
-                                    title="📊 Data Extraction Completeness by Section",
-                                    color="Completeness",
-                                    color_continuous_scale="RdYlGn"
-                                )
-                                fig_completeness.update_layout(height=400)
-                                st.plotly_chart(fig_completeness, use_container_width=True)
-                    
-                    else:
-                        st.error("❌ Failed to analyze the medical document. Please check the document quality and try again.")
+                if analysis_data:
+                    st.success("Medical data analysis completed!")
+                    # Display complete metadata
+                    analyzer.display_complete_metadata(analysis_data)
+                else:
+                    st.error("Failed to analyze medical data. Please try another PDF or check API settings.")
             else:
-                st.error("❌ Failed to extract text from the PDF. Please ensure the document is readable and try again.")
+                st.error("No text could be extracted from the PDF. Ensure it's a valid medical document.")
+    
+    # Footer
+    st.divider()
+    st.markdown("**Note**: This tool is for informational purposes only and should not be used for medical diagnosis or treatment decisions.")
+    st.markdown("Developed with ❤️ by xAI | © 2025")
 
 if __name__ == "__main__":
     main()
