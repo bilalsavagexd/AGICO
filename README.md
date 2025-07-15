@@ -230,4 +230,4 @@ This tool is for informational purposes only and should not be used for medical 
 
 ---
 
-**Developed with ❤️ by xAI | © 2025**
+**Developed by Muhammad Bilal during his Internship at AGICO | © 2025**
